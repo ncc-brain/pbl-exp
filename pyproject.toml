@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=80", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pbl-exp"
+dynamic = ["version"]
+description = "Helper functions for running experiments at the Predictive Brain Lab (Bochum)"
+readme = "README.md"
+authors = [{ name = "Qian Chu", email = "qianchu99@gmail.com" }]
+requires-python = ">=3.10"
+dependencies = ["psychopy", "pupil-labs-realtime-api", "sr-research-pylink"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools_scm]
+local_scheme = "node-and-date"
