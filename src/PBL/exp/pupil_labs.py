@@ -5,14 +5,26 @@ from psychopy import gui, logging
 from pupil_labs.realtime_api.simple import Device, discover_devices
 
 
-def get_pupil_labs_device(search_duration_seconds=5.0):
+def get_pupil_labs_device(
+    search_duration_seconds: float = 5.0, n_offset_measurements: int = 100
+):
     """
     Get the Pupil Labs device and its time offset.
+
+    The function first prompts the user to decide whether to use the Pupil Labs eye tracker.
+    If the user chooses no, the function will return None for both the device and the time offset.
+    If the user chooses yes, the function will search for available Pupil Labs devices on the network
+    for `search_duration_seconds` to find available devices.
+
+    If only one device is found, a dialog will inform the user that this device will be used.
+    If multiple devices are found, the user will be prompted to select which device to use by its IP address.
 
     Parameters
     ----------
     search_duration_seconds : float
         Duration to search for Pupil Labs devices.
+    n_offset_measurements : int
+        Number of offset measurements to estimate the time offset.
 
     Returns
     -------
@@ -42,9 +54,6 @@ def get_pupil_labs_device(search_duration_seconds=5.0):
             raise RuntimeError("No Pupil Labs device found.")
         elif len(devices) == 1:
             device = devices[0]
-            dlg = gui.Dlg(title="Pupil Labs configuration")
-            dlg.addText(f"Using the only Pupil Labs device found at {device.address}")
-            dlg.show()
         else:
             ip_addresses = [device.address for device in devices]
             dlg = gui.Dlg(title="Pupil Labs configuration")
@@ -57,12 +66,30 @@ def get_pupil_labs_device(search_duration_seconds=5.0):
                     device = d
                 else:
                     d.close()
-        logging.info(f"Connected to Pupil Labs device at {device.address}")
+        # Show the connected device information
+        device_vars = vars(device)
+        dlg = gui.Dlg(title="Pupil Labs configuration")
+        if len(devices) == 1:
+            dlg.addText("Exactly one Pupil Labs device found:")
+        else:
+            dlg.addText("Selected Pupil Labs device:")
+        for key, value in device_vars.items():
+            dlg.addText(f"{key}: {value}")
+        dlg.show()
+        sys.exit() if not dlg.OK else None
+        if device.version_glasses == 1:
+            serial = device.serial_number_glasses
+        else:
+            serial = device.module_serial
+        logging.info(f"Connected to Pupil Labs device (serial number: {serial})")
 
         median_offset_ns = round(
             device.estimate_time_offset().time_offset_ms.median * 1_000_000
         )
-        offset_std = round(device.estimate_time_offset().time_offset_ms.std * 1_000_000)
+        offset_std = round(
+            device.estimate_time_offset(n_offset_measurements).time_offset_ms.std
+            * 1_000_000
+        )
         logging.info(
             f"Estimated Pupil Labs device time offset (ns) = {median_offset_ns} ± {offset_std} (median ± std)"
         )

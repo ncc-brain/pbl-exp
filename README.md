@@ -18,6 +18,7 @@ pip install pbl-exp
 
 ```python
 from PBL.exp import get_pupil_labs_device
+
 device, median_offset_ns = get_pupil_labs_device()
 ```
 
@@ -32,6 +33,7 @@ The clock offset can then be used to send events to the Pupil Labs device with c
 
 ```python
 from PBL.exp import send_event_to_pupil_labs
+
 send_event_to_pupil_labs(device, "event_name", median_offset_ns)
 ```
 
