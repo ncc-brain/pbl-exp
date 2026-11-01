@@ -52,7 +52,7 @@ jobs:
     # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
     environment:
       name: pypi
-      url: https://pypi.org/p/VisFeats
+      url: https://pypi.org/p/pbl-exp
 
     steps:
       - name: Retrieve release distributions
