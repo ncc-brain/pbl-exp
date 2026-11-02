@@ -11,6 +11,8 @@ import cv2
 import numpy as np
 from psychopy import visual
 
+from numbers import Real
+
 # ---------------------------------------------------------------------------
 # Supported marker families and layouts
 # ---------------------------------------------------------------------------
@@ -52,7 +54,7 @@ def create_fiducial_marker_stimuli(
     marker_ids: Iterable[int],
     marker_size_pixels: int,
     auto_layout: bool = True,
-    margin: int = 50,
+    margin: float = 0.10,
 ) -> list[visual.ImageStim]:
     """
     Generate PsychoPy stimuli for a collection of fiducial markers.
@@ -60,6 +62,23 @@ def create_fiducial_marker_stimuli(
     Markers are generated from one of OpenCV's predefined ArUco or AprilTag
     dictionaries. Each marker is returned as an independent
     :class:`psychopy.visual.ImageStim`.
+
+    ``marker_size_pixels`` specifies the total width and height of the
+    displayed stimulus, including a white outer quiet zone. The detectable
+    ArUco or AprilTag marker occupies the remaining central area.
+
+    The approximate width and height of the detectable marker are calculated
+    as::
+
+        detectable_size_pixels = (
+            marker_size_pixels
+            - 2 * marker_size_pixels * margin
+        )
+
+    For example, with ``marker_size_pixels=200`` and ``margin=0.10``, the
+    total stimulus is 200 × 200 pixels and the detectable marker is
+    approximately 160 × 160 pixels, with approximately 20 pixels of white
+    margin on each side.
 
     When automatic layout is enabled, 4, 6, or 8 markers are positioned around
     the perimeter of the window. Marker IDs are assigned clockwise, beginning
@@ -105,15 +124,18 @@ def create_fiducial_marker_stimuli(
         selected dictionary. When automatic layout is enabled, their order
         determines their clockwise placement, beginning at the top-left.
     marker_size_pixels : int
-        Width and height of each square marker, in pixels.
+        Total width and height of each square stimulus, in pixels, including
+        the white outer margin.
     auto_layout : bool, default=True
-        If ``True``, automatically position the markers around the perimeter
-        of the window. Automatic layout supports exactly 4, 6, or 8 markers.
-        If ``False``, all markers are initially centered at ``(0, 0)``.
-    margin : int, default=50
-        Minimum distance, in pixels, between each automatically positioned
-        marker and the nearest window edge. This argument is ignored when
-        ``auto_layout`` is ``False``.
+        If ``True``, automatically position the complete marker stimuli around
+        the perimeter of the window. Automatic layout supports exactly 4, 6,
+        or 8 markers. If ``False``, all markers are initially centered at
+        ``(0, 0)``.
+    margin : float, default=0.10
+        Width of the white quiet zone on each side, expressed as a fraction of
+        the total stimulus size. Must be greater than or equal to 0 and less
+        than 0.5. For example, ``margin=0.10`` gives a white margin equal to
+        10% of the total stimulus width on each side.
 
     Returns
     -------
@@ -125,38 +147,10 @@ def create_fiducial_marker_stimuli(
     TypeError
         If an argument has an invalid type.
     ValueError
-        If the marker family, marker IDs, marker size, margin, or automatic
-        layout is invalid.
+        If the marker family, marker IDs, total marker size, margin, or
+        automatic layout is invalid.
     RuntimeError
         If the installed OpenCV build does not provide the ``aruco`` module.
-
-    Examples
-    --------
-    Generate four markers positioned clockwise from the top-left:
-
-    >>> markers = create_fiducial_marker_stimuli(
-    ...     win=win,
-    ...     marker_family="36h11",
-    ...     marker_ids=[0, 1, 2, 3],
-    ...     marker_size_pixels=200,
-    ...     auto_layout=True,
-    ...     margin=50,
-    ... )
-    >>> for marker in markers:
-    ...     marker.draw()
-    >>> win.flip()
-
-    Generate markers without assigning positions:
-
-    >>> markers = create_fiducial_marker_stimuli(
-    ...     win=win,
-    ...     marker_family="6x6_250",
-    ...     marker_ids=[10, 11],
-    ...     marker_size_pixels=200,
-    ...     auto_layout=False,
-    ... )
-    >>> markers[0].pos = (-300, 0)
-    >>> markers[1].pos = (300, 0)
     """
     if not isinstance(auto_layout, (bool, np.bool_)):
         raise TypeError(
@@ -165,19 +159,22 @@ def create_fiducial_marker_stimuli(
 
     marker_ids = _validate_marker_ids(marker_ids)
 
-    # Validate the image size before creating the PsychoPy stimuli.
     marker_type, aruco_dictionary = _marker_family_to_dict(marker_family)
-    del marker_type  # The generator resolves this again when creating images.
+    del marker_type
+
+    margin = _validate_marker_margin(margin)
 
     marker_size_pixels = _validate_marker_size(
         marker_size_pixels,
         aruco_dictionary,
+        margin=margin,
     )
 
     marker_images = _generate_markers(
         marker_family=marker_family,
         marker_ids=marker_ids,
         marker_size_pixels=marker_size_pixels,
+        margin=margin,
     )
 
     stimuli = [
@@ -203,7 +200,6 @@ def create_fiducial_marker_stimuli(
             window_size_pixels=win.size,
             number_of_markers=len(stimuli),
             marker_size_pixels=marker_size_pixels,
-            margin=margin,
         )
 
         for stimulus, position in zip(stimuli, positions, strict=True):
@@ -331,9 +327,13 @@ def _generate_markers(
     marker_family: str,
     marker_ids: Iterable[int],
     marker_size_pixels: int,
+    margin: float,
 ) -> Iterator[np.ndarray]:
     """
     Generate marker images suitable for use by PsychoPy.
+
+    ``marker_size_pixels`` is the total image size, including the white outer
+    margin. The detectable marker is generated in the central region.
 
     Parameters
     ----------
@@ -342,27 +342,37 @@ def _generate_markers(
     marker_ids : Iterable[int]
         Marker identifiers to generate.
     marker_size_pixels : int
-        Width and height of each generated marker, in pixels.
+        Total width and height of each stimulus, in pixels, including the
+        white outer margin.
+    margin : float
+        Fraction of the total image size used as a white margin on each side.
 
     Yields
     ------
     numpy.ndarray
         A square, contiguous ``int8`` array containing values in ``{-1, 1}``.
         PsychoPy interprets ``-1`` as black and ``1`` as white.
-
-    Raises
-    ------
-    TypeError
-        If ``marker_size_pixels`` is not an integer.
-    ValueError
-        If the marker size or a marker identifier is invalid.
     """
     marker_type, aruco_dictionary = _marker_family_to_dict(marker_family)
+
+    margin = _validate_marker_margin(margin)
 
     marker_size_pixels = _validate_marker_size(
         marker_size_pixels,
         aruco_dictionary,
+        margin=margin,
     )
+
+    # Keep the final image exactly marker_size_pixels × marker_size_pixels.
+    # For odd pixel remainders, the extra pixel is assigned to the right and
+    # bottom margins.
+    detectable_size_pixels = round(marker_size_pixels * (1 - 2 * margin))
+    total_margin_pixels = marker_size_pixels - detectable_size_pixels
+
+    margin_left = total_margin_pixels // 2
+    margin_right = total_margin_pixels - margin_left
+    margin_top = margin_left
+    margin_bottom = margin_right
 
     number_of_available_markers = len(aruco_dictionary.bytesList)
 
@@ -374,10 +384,23 @@ def _generate_markers(
                 f"{number_of_available_markers - 1}."
             )
 
-        image = cv2.aruco.generateImageMarker(
+        marker_image = cv2.aruco.generateImageMarker(
             aruco_dictionary,
             marker_id,
-            marker_size_pixels,
+            detectable_size_pixels,
+            borderBits=1,
+        )
+
+        # Add a white outer quiet zone. This is deliberately added before
+        # conversion to PsychoPy's {-1, 1} image range.
+        image = cv2.copyMakeBorder(
+            marker_image,
+            margin_top,
+            margin_bottom,
+            margin_left,
+            margin_right,
+            borderType=cv2.BORDER_CONSTANT,
+            value=255,
         )
 
         # OpenCV represents marker images using values in {0, 255}, whereas
@@ -391,15 +414,11 @@ def _generate_markers(
             # OpenCV and PsychoPy use different orientation conventions for
             # AprilTag images. This transformation preserves the orientation
             # expected by the corresponding detector.
-            #
-            # See: https://github.com/opencv/opencv-python/issues/1195
             image = np.fliplr(image)
         else:
             # PsychoPy's image y-axis is inverted relative to OpenCV's.
             image = np.flipud(image)
 
-        # Flip operations can create arrays with negative strides. Return a
-        # contiguous array to ensure compatibility with PsychoPy and OpenGL.
         yield np.ascontiguousarray(image)
 
 
@@ -412,13 +431,17 @@ def _calculate_marker_positions(
     window_size_pixels: Iterable[int],
     number_of_markers: int,
     marker_size_pixels: int,
-    margin: int,
 ) -> list[tuple[float, float]]:
     """
     Calculate clockwise marker positions around a window's perimeter.
 
     Position order begins at the top-left and proceeds clockwise. Exactly 4,
     6, or 8 markers are supported.
+
+    Markers are positioned such that the full stimulus, including its white
+    quiet zone, remains within the window. The ``marker_size_pixels`` argument
+    therefore refers to the total stimulus size, not only the detectable
+    ArUco/AprilTag region.
 
     Parameters
     ----------
@@ -427,26 +450,20 @@ def _calculate_marker_positions(
     number_of_markers : int
         Number of marker positions to calculate. Must be 4, 6, or 8.
     marker_size_pixels : int
-        Width and height of each marker, in pixels.
-    margin : int
-        Distance between each marker and the nearest window edge, in pixels.
+        Total width and height of each marker stimulus, in pixels, including
+        the white outer margin.
 
     Returns
     -------
     list of tuple of float
-        Marker-center positions in PsychoPy pixel coordinates.
+        Marker-centre positions in PsychoPy pixel coordinates.
 
     Raises
     ------
-    TypeError
-        If ``margin`` is not an integer.
     ValueError
-        If the number of markers is unsupported, the margin is negative, or
-        the markers do not fit within the window.
+        If the number of markers is unsupported or the marker stimuli do not
+        fit within the window.
     """
-    if margin < 0:
-        raise ValueError(f"margin must be nonnegative; received {margin}.")
-
     if number_of_markers not in {4, 6, 8}:
         raise ValueError(
             "Automatic layout supports exactly 4, 6, or 8 markers; "
@@ -463,31 +480,29 @@ def _calculate_marker_positions(
 
     window_width, window_height = window_size
 
-    required_extent = marker_size_pixels + 2 * margin
-
-    if required_extent > window_width:
+    if marker_size_pixels > window_width:
         raise ValueError(
-            f"A {marker_size_pixels}-pixel marker with a {margin}-pixel "
-            f"margin does not fit within the {window_width:g}-pixel "
-            "window width."
+            f"A {marker_size_pixels}-pixel marker stimulus does not fit "
+            f"within the {window_width:g}-pixel window width."
         )
 
-    if required_extent > window_height:
+    if marker_size_pixels > window_height:
         raise ValueError(
-            f"A {marker_size_pixels}-pixel marker with a {margin}-pixel "
-            f"margin does not fit within the {window_height:g}-pixel "
-            "window height."
+            f"A {marker_size_pixels}-pixel marker stimulus does not fit "
+            f"within the {window_height:g}-pixel window height."
         )
 
     half_marker_size = marker_size_pixels / 2
 
-    left = -window_width / 2 + half_marker_size + margin
+    # Positions refer to the centre of the full ImageStim. The complete
+    # stimulus, including the white quiet zone, lies within the window.
+    left = -window_width / 2 + half_marker_size
     center_x = 0.0
-    right = window_width / 2 - half_marker_size - margin
+    right = window_width / 2 - half_marker_size
 
-    top = window_height / 2 - half_marker_size - margin
+    top = window_height / 2 - half_marker_size
     center_y = 0.0
-    bottom = -window_height / 2 + half_marker_size + margin
+    bottom = -window_height / 2 + half_marker_size
 
     if number_of_markers == 4:
         return [
@@ -553,11 +568,37 @@ def _validate_marker_ids(marker_ids: Iterable[int]) -> list[int]:
     return validated_ids
 
 
+def _validate_marker_margin(margin: float) -> float:
+    """Validate and return the fractional white quiet-zone margin."""
+    if isinstance(margin, (bool, np.bool_)):
+        raise TypeError("margin must be a float, not a Boolean.")
+
+    if not isinstance(margin, Real):
+        raise TypeError(f"margin must be a float, not {type(margin).__name__}.")
+
+    margin = float(margin)
+
+    if not 0 <= margin < 0.5:
+        raise ValueError(
+            "margin must be greater than or equal to 0 and less than 0.5; "
+            f"received {margin}."
+        )
+
+    return margin
+
+
 def _validate_marker_size(
     marker_size_pixels: int,
     aruco_dictionary: cv2.aruco.Dictionary,
+    margin: float,
 ) -> int:
-    """Validate and return the requested marker image size."""
+    """
+    Validate the total requested stimulus size.
+
+    The total size includes the white quiet zone. The central detectable marker
+    must still be large enough to contain the dictionary data and OpenCV's
+    one-cell black border on each side.
+    """
     if isinstance(marker_size_pixels, (bool, np.bool_)):
         raise TypeError("marker_size_pixels must be an integer, not a Boolean.")
 
@@ -569,14 +610,17 @@ def _validate_marker_size(
             f"not {type(marker_size_pixels).__name__}."
         ) from error
 
-    # A generated image needs enough pixels for the marker data plus the
-    # default one-cell border on each side.
-    minimum_size_pixels = int(aruco_dictionary.markerSize) + 2
+    detectable_size_pixels = round(marker_size_pixels * (1 - 2 * margin))
 
-    if marker_size_pixels < minimum_size_pixels:
+    # The marker requires one black border cell around the encoded cells.
+    minimum_detectable_size_pixels = int(aruco_dictionary.markerSize) + 2
+
+    if detectable_size_pixels < minimum_detectable_size_pixels:
         raise ValueError(
-            f"marker_size_pixels must be at least {minimum_size_pixels} "
-            f"for this dictionary; received {marker_size_pixels}."
+            f"marker_size_pixels={marker_size_pixels} with margin={margin} "
+            f"leaves only {detectable_size_pixels} pixels for the detectable "
+            f"marker. At least {minimum_detectable_size_pixels} pixels are "
+            "required for this dictionary."
         )
 
     return marker_size_pixels

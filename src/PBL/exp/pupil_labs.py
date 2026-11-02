@@ -108,9 +108,21 @@ def get_pupil_labs_device(
                 if candidate is not device:
                     candidate.close()
 
+        # Identify the eye-tracker model and serial number.
+        if float(device.version_glasses) == 1.0:
+            device_name = "Invisible"
+            serial_number = device.serial_number_glasses
+        elif float(device.version_glasses) == 2.0:
+            device_name = "Neon"
+            serial_number = device.module_serial
+        else:
+            device.close()
+            raise ValueError(
+                f"Unsupported Pupil Labs device version: {device.version_glasses}"
+            )
+
         # Display information about the selected device.
         dlg = gui.Dlg(title="Pupil Labs eye-tracker configuration")
-
         if len(devices) == 1:
             dlg.addText(
                 "One Pupil Labs eye tracker was detected. "
@@ -119,26 +131,14 @@ def get_pupil_labs_device(
         else:
             dlg.addText("The following Pupil Labs eye tracker was selected:")
 
-        for key, value in vars(device).items():
-            dlg.addText(f"{key}: {value}")
-
+        dlg.addText(f"\tDevice model: {device_name}")
+        dlg.addText(f"\tSerial number: {serial_number}")
+        dlg.addText(f"\tIP address: {device.address}")
         dlg.show()
 
         if not dlg.OK:
             device.close()
             core.quit()
-
-        # Identify the eye-tracker model and serial number.
-        if device.version_glasses == 1:
-            device_name = "Invisible"
-            serial_number = device.serial_number_glasses
-        elif device.version_glasses == 2:
-            device_name = "Neon"
-            serial_number = device.module_serial
-        else:
-            raise ValueError(
-                f"Unsupported Pupil Labs device version: {device.version_glasses}"
-            )
 
         logging.info(
             f"Connected to Pupil Labs {device_name} (serial number: {serial_number})"
@@ -160,24 +160,110 @@ def get_pupil_labs_device(
         return device, median_offset_ns
 
 
-def post_pupil_labs_template(device: Device | None = None):
+def configure_pupil_labs_template(
+    device: Device | None,
+    template_name: str,
+    template_data: dict | None = None,
+    verify_or_post: str = "verify",
+):
     """
-    Verify that the a correct template is selected on the Pupil Labs device,
-    and optionally posts it to the device.
+    Verify the active template and optionally verify or update its data.
+
+    If another template is active, the user is prompted to select the
+    requested template and retry. When ``template_data`` is provided, the
+    function either checks its values against the active template or posts
+    them, depending on ``verify_or_post``.
 
     Parameters
     ----------
-    device : Device or None, default=None
-        Connected Pupil Labs device.
+    device : Device or None
+        Connected Pupil Labs device. If ``None``, the function does nothing.
+    template_name : str
+        Name of the template to verify.
+    template_data : dict or None, default=None
+        Template fields to verify or update. Every key must already exist in
+        the active template data. If ``None``, no template data is checked
+        or posted.
+    verify_or_post : str, default="verify"
+        ``"verify"`` to compare the supplied values with the active template
+        data, or ``"post"`` to update the active template with those values.
 
-    Returns
-    -------
-    bool
-        True if the device is connected and responsive, False otherwise.
+    Raises
+    ------
+    KeyError
+        If ``template_data`` contains a key that is absent from the active
+        template data. The device is closed before the exception is raised.
+    ValueError
+        If verification finds values that do not match, or if
+        ``verify_or_post`` is not ``"verify"`` or ``"post"``. For a
+        verification mismatch, the device is closed before the exception is
+        raised.
+
+    Notes
+    -----
+    Cancelling the template-selection dialog closes the device and quits
+    PsychoPy. On success, the device remains open; the caller is responsible
+    for closing it when it is no longer needed.
     """
     if device is not None:
-        template = device.get_template()
-        template_data = device.get_template_data()
+        while True:
+            active_template = device.get_template()
+            if active_template.name == template_name:
+                logging.info(
+                    f"Pupil Labs template '{template_name}' is active and expected."
+                )
+                break
+            else:
+                dlg = gui.Dlg("Template Mismatch")
+                dlg.addText(
+                    f"Current template is '{active_template.name}', not '{template_name}'\n"
+                    f"Click OK after switching to the '{template_name}' template on the companion device.\n"
+                    "Or click Cancel to quit."
+                )
+                dlg.show()
+                if not dlg.OK:
+                    device.close()
+                    core.quit()
+
+        if template_data is not None:
+            old_template_data = device.get_template_data()
+            # Check if all keys in template_data exist in the old template data
+            invalid_keys = [k for k in template_data if k not in old_template_data]
+            if invalid_keys:
+                device.close()
+                raise KeyError(
+                    f"Invalid keys entered in the provided template data: {invalid_keys}"
+                )
+            if verify_or_post == "verify":
+                # Gather all mismatch values
+                mismatches = []
+                for k, v in template_data.items():
+                    if old_template_data.get(k) != v:
+                        mismatches.append((k, v, old_template_data.get(k)))
+                if mismatches:
+                    device.close()
+                    mismatch_str = "\n".join(
+                        f"Key '{k}': expected '{expected}', found '{found}'"
+                        for k, expected, found in mismatches
+                    )
+                    raise ValueError(
+                        f"Verification failed for the following keys:\n{mismatch_str}"
+                    )
+                logging.info(
+                    f"Pupil Labs template '{template_name}' data verified successfully: {template_data}."
+                )
+            elif verify_or_post == "post":
+                logging.info(
+                    f"Pupil Labs template '{template_name}' data updated and posted: {template_data}"
+                )
+                old_template_data.update(template_data)
+                device.post_template_data(old_template_data)
+            else:
+                device.close()
+                raise ValueError(
+                    f"Invalid value for 'verify_or_post': {verify_or_post}\n"
+                    f"Expected 'verify' or 'post'."
+                )
 
 
 def send_event_to_pupil_labs(

@@ -8,6 +8,7 @@ from psychopy.hardware import keyboard
 from pylsl import StreamInfo, StreamOutlet
 
 from PBL.exp import (
+    configure_pupil_labs_template,
     create_fiducial_marker_stimuli,
     get_pupil_labs_device,
     send_event_to_pupil_labs,
@@ -27,6 +28,8 @@ LOG_FILE = os.path.join(
     LOG_DIRECTORY,
     "psychopy_and_pupil_labs.log",
 )
+
+logging.console.setLevel(logging.INFO)
 
 
 # ---------------------------------------------------------------------------
@@ -69,30 +72,25 @@ logging.info("Experiment-event LSL stream initialized")
 # Pupil Labs connection
 # ---------------------------------------------------------------------------
 
-# Ask whether to connect to a Pupil Labs eye tracker. If the user declines,
-# both values will be None and the experiment will continue without it.
+# Connect to a Pupil Labs eye tracker if one is available and selected. When
+# there is no device, the experiment still runs and sends markers over LSL.
 device, clock_offset_ns = get_pupil_labs_device()
 
+# Optionally, verify that the device is correctly configured with the desired template.
+configure_pupil_labs_template(
+    device=device,
+    template_name="Recording with Notes",  # default template
+)
 
-def send_event_to_outputs(event_string: str) -> None:
-    """
-    Send an event marker to the active external outputs.
 
-    The event is always sent to the experiment's LSL marker stream. It is also
-    sent to the Pupil Labs eye tracker when a device is connected and a clock
-    offset is available.
+def send_event_to_outputs(event_string: str):
+    """Send an event marker to LSL and, when connected, to Pupil Labs.
 
-    Parameters
-    ----------
-    event_string : str
-        Description or label of the event.
-
-    Returns
-    -------
-    None
+    Schedule this function with ``win.callOnFlip`` when a marker should be
+    timestamped as close as possible to a visual change. PsychoPy's own log
+    uses ``win.logOnFlip`` separately so it receives PsychoPy's flip timestamp.
     """
     event_outlet.push_sample([event_string])
-
     if device is not None and clock_offset_ns is not None:
         send_event_to_pupil_labs(
             event_string=event_string,
@@ -126,15 +124,15 @@ instruction_text = visual.TextStim(
 markers = create_fiducial_marker_stimuli(
     win=win,
     marker_family="36h11",
-    marker_ids=range(6),
+    marker_ids=range(4),
     marker_size_pixels=200,
     auto_layout=True,
-    margin=50,
 )
 for marker in markers:
     marker.autoDraw = True
 
-# Create a keyboard device for starting and interrupting the experiment.
+# Use the same keyboard device for the start-screen response and Escape
+# interruption callback.
 kb = keyboard.KeyboardDevice()
 
 
@@ -145,21 +143,11 @@ def end_experiment(interrupted: bool = False) -> None:
     An experiment-end marker is written to the PsychoPy log and the LSL event
     stream. If a Pupil Labs recording is active, the marker is also sent to
     the eye tracker before its recording is stopped and saved.
-
-    Parameters
-    ----------
-    interrupted : bool, default=False
-        Whether the experiment was interrupted before normal completion.
-
-    Returns
-    -------
-    None
-        The function terminates the PsychoPy experiment by calling
-        ``core.quit()``.
     """
     event_string = "experiment end (interrupted)" if interrupted else "experiment end"
 
-    # Record the final marker in the PsychoPy log and LSL stream.
+    # Record the final marker in PsychoPy and LSL before stopping the device,
+    # so it can also be sent to the active Pupil Labs recording below.
     logging.exp(event_string)
     event_outlet.push_sample([event_string])
 
@@ -197,7 +185,8 @@ kb.registerCallback(
 instruction_text.draw()
 win.flip()
 
-# Wait until the participant presses the space bar.
+# Start only after the participant presses the space bar. Escape remains
+# registered as an interruption key while keyboard events are being processed.
 kb.waitKeys(keyList=["space"])
 
 # Clear the instruction screen.
@@ -205,7 +194,8 @@ win.flip()
 
 
 # ---------------------------------------------------------------------------
-# Start the external recording and experiment
+# Start the external recording first, then allow it to initialize before the
+# experiment-start marker is sent to the output streams.
 # ---------------------------------------------------------------------------
 
 if device is not None:
@@ -232,9 +222,9 @@ for trial_index in range(N_TRIALS):
     # Prepare the flash in the back buffer.
     square.draw()
 
-    # callOnFlip executes the function immediately after the window flip call.
-    # This places the LSL and Pupil Labs markers close to the visual onset.
-    # logOnFlip similarly timestamps the event in PsychoPy's logging system.
+    # Run external marker output immediately after the upcoming flip, placing
+    # its timestamp close to the flash's visual onset. PsychoPy timestamps the
+    # same event separately through logOnFlip.
     win.callOnFlip(
         send_event_to_outputs,
         flash_onset_event,
@@ -244,7 +234,7 @@ for trial_index in range(N_TRIALS):
         msg=flash_onset_event,
     )
 
-    # Display the prepared flash and invoke the registered flip callbacks.
+    # Display the flash and run both callbacks registered above.
     win.flip()
 
     # Keep the flash visible for the configured duration.
@@ -267,7 +257,8 @@ for trial_index in range(N_TRIALS):
 # Normal experiment completion
 # ---------------------------------------------------------------------------
 
-# Leave a short period after the final trial before stopping the recording.
+# Leave a short post-trial period before writing the end marker and stopping
+# the Pupil Labs recording.
 core.wait(1.0)
 
 end_experiment(interrupted=False)
