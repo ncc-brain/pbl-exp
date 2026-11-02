@@ -7,7 +7,7 @@ from psychopy import core, logging, visual
 from psychopy.hardware import keyboard
 from pylsl import StreamInfo, StreamOutlet
 
-from PBL.exp import (
+from pred_brain.exp import (
     configure_pupil_labs_template,
     create_fiducial_marker_stimuli,
     get_pupil_labs_device,

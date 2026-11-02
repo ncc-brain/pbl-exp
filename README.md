@@ -26,7 +26,7 @@ pip install pbl-exp
 ### Conveniently connect to a Pupil Labs device and send events
 
 ```python
-from PBL.exp import get_pupil_labs_device
+from pred_brain.exp import get_pupil_labs_device
 
 device, median_offset_ns = get_pupil_labs_device()
 ```
@@ -41,7 +41,7 @@ If a device is selected, the function will return the device object and estimate
 The clock offset can then be used to send events to the Pupil Labs device with corrected timestamps. For example:
 
 ```python
-from PBL.exp import send_event_to_pupil_labs
+from pred_brain.exp import send_event_to_pupil_labs
 
 send_event_to_pupil_labs("event_name", device, median_offset_ns)
 ```
@@ -56,7 +56,7 @@ stimuli and display them throughout the experiment:
 
 ```python
 from psychopy import visual
-from PBL.exp import create_fiducial_marker_stimuli
+from pred_brain.exp import create_fiducial_marker_stimuli
 
 win = visual.Window(fullscr=True)
 
