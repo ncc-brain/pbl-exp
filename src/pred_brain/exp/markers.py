@@ -5,13 +5,12 @@ from __future__ import annotations
 import operator
 import re
 from collections.abc import Iterable, Iterator
+from numbers import Real
 from typing import Literal
 
 import cv2
 import numpy as np
 from psychopy import visual
-
-from numbers import Real
 
 # ---------------------------------------------------------------------------
 # Supported marker families and layouts
