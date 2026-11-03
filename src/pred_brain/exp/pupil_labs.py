@@ -109,7 +109,10 @@ def get_pupil_labs_device(
                     candidate.close()
 
         # Identify the eye-tracker model and serial number.
-        if float(device.version_glasses) == 1.0:
+        if device.version_glasses is None:
+            device.close()
+            raise RuntimeError("No Pupil Labs device is connected to the companion.")
+        elif float(device.version_glasses) == 1.0:
             device_name = "Invisible"
             serial_number = device.serial_number_glasses
         elif float(device.version_glasses) == 2.0:
@@ -134,6 +137,9 @@ def get_pupil_labs_device(
         dlg.addText(f"\tDevice model: {device_name}")
         dlg.addText(f"\tSerial number: {serial_number}")
         dlg.addText(f"\tIP address: {device.address}")
+        dlg.addText(
+            f"\tBattery level: {device.battery_state} ({device.battery_level_percent}%)"
+        )
         dlg.show()
 
         if not dlg.OK:
@@ -296,21 +302,3 @@ def send_event_to_pupil_labs(
         event_string,
         event_timestamp_unix_ns=time_ns() - clock_offset_ns,
     )
-
-
-if __name__ == "__main__":
-    logging.console.setLevel(logging.INFO)
-
-    device, clock_offset_ns = get_pupil_labs_device()
-
-    if device is not None:
-        try:
-            send_event_to_pupil_labs(
-                event_string="connection_test",
-                device=device,
-                clock_offset_ns=clock_offset_ns,
-            )
-            logging.info("Sent connection test event to Pupil Labs eye tracker")
-        finally:
-            device.close()
-            logging.info("Closed the Pupil Labs eye-tracker connection")
