@@ -9,7 +9,7 @@ description = "Helper functions for running experiments at the Predictive Brain 
 readme = "README.md"
 authors = [{ name = "Qian Chu", email = "qianchu99@gmail.com" }]
 requires-python = ">=3.10"
-dependencies = ["psychopy", "pupil-labs-realtime-api", "sr-research-pylink"]
+dependencies = ["psychopy", "pupil-labs-realtime-api", "sr-research-pylink", "pylsl"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

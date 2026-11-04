@@ -26,7 +26,7 @@ PUPIL_RECORDING_STARTUP_SECONDS = 3.0
 LOG_DIRECTORY = "examples_logs"
 LOG_FILE = os.path.join(
     LOG_DIRECTORY,
-    "psychopy_and_pupil_labs.log",
+    "full_example.log",
 )
 
 logging.console.setLevel(logging.INFO)
@@ -56,11 +56,11 @@ logging.info("Experiment initialization started")
 # Create an LSL marker stream containing one string channel. The source ID
 # should uniquely identify this outlet among the streams on the network.
 event_stream_info = StreamInfo(
-    name="experiment_events",
+    name="PsychoPyEvents",
     type="Markers",
     channel_count=1,
     channel_format="string",
-    source_id=f"experiment-events-{socket.gethostname()}",
+    source_id=f"psychopy-events-{socket.gethostname()}",
 )
 
 event_outlet = StreamOutlet(event_stream_info)
