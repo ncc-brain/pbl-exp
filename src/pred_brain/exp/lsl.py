@@ -25,10 +25,12 @@ def check_lsl_streams(
 
     Returns
     -------
-    bool
+    all_active : bool
         True only if every requested criteria dict matches at least one
         available stream within the wait time, False otherwise. All keys in a
         criteria dict must match the same stream.
+    active_streams : list of StreamInfo
+        List of currently active LSL streams as returned by ``pylsl.resolve_streams``.
 
     Examples
     --------
@@ -38,13 +40,13 @@ def check_lsl_streams(
     >>> check_lsl_streams({"type": "Gaze"})
     True
     """
-    streams = pylsl.resolve_streams(wait_time=wait_time)
+    active_streams = pylsl.resolve_streams(wait_time=wait_time)
     if isinstance(stream_info, dict):
         stream_info = [stream_info]
 
     for stream_criteria in stream_info:
         found = False
-        for stream in streams:
+        for stream in active_streams:
             for key, value in stream_criteria.items():
                 attribute = getattr(stream, key)
                 actual_value = attribute() if callable(attribute) else attribute
@@ -54,8 +56,8 @@ def check_lsl_streams(
                 found = True
                 break
         if not found:
-            return False
-    return True
+            return False, active_streams
+    return True, active_streams
 
 
 def launch_lab_recorder(
@@ -160,9 +162,7 @@ def set_lab_recorder_filename(
         _send_lab_recorder_command(port, f"filename{filename_command}\n")
 
 
-def start_recording_lab_recorder(
-    port: int = 22345, select_all_streams: bool = True
-):
+def start_recording_lab_recorder(port: int = 22345, select_all_streams: bool = True):
     """Start an LSL recording through LabRecorder's remote-control server.
 
     When ``select_all_streams`` is true, the function first sends ``update`` and
@@ -182,11 +182,28 @@ def start_recording_lab_recorder(
         If a connection to the server cannot be established or a command
         cannot be sent.
     """
+    update_lab_recorder(port)
     with socket.create_connection(("localhost", port)) as sock:
         if select_all_streams:
-            sock.sendall(b"update\n")
             sock.sendall(b"select_all\n")
         sock.sendall(b"start\n")
+
+
+def update_lab_recorder(port: int = 22345):
+    """Send an update command to LabRecorder's remote-control server to refresh the stream list.
+
+    Parameters
+    ----------
+    port : int, default=22345
+        TCP port of the LabRecorder remote-control server on localhost.
+
+    Raises
+    ------
+    OSError
+        If a connection to the server cannot be established or the command
+        cannot be sent.
+    """
+    _send_lab_recorder_command(port, "update\n")
 
 
 def stop_recording_lab_recorder(port: int = 22345):

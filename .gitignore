@@ -180,4 +180,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-.examples_logs/
+# Logs
+examples_logs_and_data/
+
+# LSL applications
+AudioCapture*/
+LabRecorder*/

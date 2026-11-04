@@ -3,7 +3,7 @@
 import os
 import socket
 
-from psychopy import core, logging, visual
+from psychopy import core, gui, logging, visual
 from psychopy.hardware import keyboard
 from pylsl import StreamInfo, StreamOutlet
 
@@ -13,20 +13,41 @@ from pred_brain.exp import (
     get_pupil_labs_device,
     send_event_to_pupil_labs,
 )
+from pred_brain.exp.lsl import (
+    check_lsl_streams,
+    launch_lab_recorder,
+    set_lab_recorder_filename,
+    start_recording_lab_recorder,
+    stop_recording_lab_recorder,
+    update_lab_recorder,
+)
+
+# Get participant and run information
+dlg = gui.Dlg(title="Participant Information")
+dlg.addField("Participant ID:")
+dlg.addField("Run:")
+dlg.show()  # Show the dialog and wait for user input
+if dlg.OK:
+    participant_id = dlg.data[0]
+    run = int(dlg.data[1])
+else:
+    core.quit()  # User pressed cancel
 
 # ---------------------------------------------------------------------------
 # Experiment configuration
 # ---------------------------------------------------------------------------
-
+TASK = "WatchFlash"
 N_TRIALS = 5
 FLASH_DURATION_SECONDS = 0.5
 INTER_FLASH_INTERVAL_SECONDS = 3.0
-PUPIL_RECORDING_STARTUP_SECONDS = 3.0
+STARTUP_SECONDS = 3.0
 
-LOG_DIRECTORY = "examples_logs"
-LOG_FILE = os.path.join(
+LOG_DIRECTORY = "examples_logs_and_data"
+
+bids_file_stem = f"sub-{participant_id}_task-{TASK}_run-{run}"
+log_file_path = os.path.join(
     LOG_DIRECTORY,
-    "full_example.log",
+    f"{bids_file_stem}.log",
 )
 
 logging.console.setLevel(logging.INFO)
@@ -41,7 +62,7 @@ os.makedirs(LOG_DIRECTORY, exist_ok=True)
 
 # Keep a reference to the LogFile object for the duration of the experiment.
 log_file = logging.LogFile(
-    LOG_FILE,
+    log_file_path,
     level=logging.INFO,
     filemode="w",
 )
@@ -98,6 +119,30 @@ def send_event_to_outputs(event_string: str):
             clock_offset_ns=clock_offset_ns,
         )
 
+
+# ---------------------------------------------------------------------------
+# Launch LabRecorder and check LSL streams
+# ---------------------------------------------------------------------------
+
+launch_lab_recorder(r"LabRecorder-1.18.0-Win_amd64\LabRecorder.exe")
+set_lab_recorder_filename(
+    root="examples_logs_and_data", filename=f"{bids_file_stem}.xdf"
+)
+update_lab_recorder()
+
+# Check that all expected LSL streams are available
+expected_streams = [{"name": "PsychoPyEvents", "type": "Markers"}]
+if device is not None:
+    expected_streams.append({"type": "Gaze"})
+
+flag, streams = check_lsl_streams(expected_streams)
+
+if not flag:
+    logging.error(f"Expecting: {expected_streams}")
+    logging.error(f"Found streams: {streams}")
+    if device is not None:
+        device.close()
+    core.quit()
 
 # ---------------------------------------------------------------------------
 # PsychoPy display and input objects
@@ -164,6 +209,8 @@ def end_experiment(interrupted: bool = False) -> None:
         device.close()
 
     # Flush pending messages before closing the window and terminating.
+    stop_recording_lab_recorder()
+    logging.info("LabRecorder stopped")
     logging.flush()
     win.close()
     core.quit()
@@ -198,12 +245,12 @@ win.flip()
 # experiment-start marker is sent to the output streams.
 # ---------------------------------------------------------------------------
 
+start_recording_lab_recorder()
 if device is not None:
     device.recording_start()
     logging.info("Pupil Labs recording started")
-    # Allow the recording to initialize before sending experiment markers.
-    core.wait(PUPIL_RECORDING_STARTUP_SECONDS)
 
+core.wait(STARTUP_SECONDS)
 experiment_start_event = "experiment start"
 
 send_event_to_outputs(experiment_start_event)
