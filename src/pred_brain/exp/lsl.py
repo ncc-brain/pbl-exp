@@ -1,9 +1,9 @@
 """Helpers for launching LabRecorder and controlling its LSL recording state."""
 
-import subprocess
 import socket
-
+import subprocess
 from pathlib import Path
+
 from psychopy import core
 
 
@@ -32,6 +32,63 @@ def launch_lab_recorder(
         subprocess.Popen([str(path_to_lab_recorder), "-c", str(path_cfg)])
     else:
         subprocess.Popen([str(path_to_lab_recorder)])
+
+
+def configure_lab_recorder(
+    port: int = 22345,
+    root: str | Path | None = None,
+    template: str | None = None,
+    sub: str | None = None,
+    ses: str | None = None,
+    task: str | None = None,
+    run: str | None = None,
+    acq: str | None = None,
+    modality: str | None = None,
+):
+    """Configure LabRecorder's filename template through its remote-control server.
+
+    Parameters
+    ----------
+    port : int, default=22345
+        TCP port of the LabRecorder remote-control server on localhost.
+    root : str or pathlib.Path, optional
+        Root directory for the recording files.
+    template : str, optional
+        Filename template. Leave as None to keep the default BIDS template.
+    sub : str, optional
+        Participant identifier.
+    ses : str, optional
+        Session identifier.
+    task : str, optional
+        Task identifier.
+    run : str, optional
+        Run identifier.
+    acq : str, optional
+        Acquisition identifier.
+    modality : str, optional
+        Modality identifier.
+    """
+    cmd = ""
+    if root is not None:
+        cmd += f" {{root:{root}}}"
+    if template is not None:
+        cmd += f" {{template:{template}}}"
+    if sub is not None:
+        cmd += f" {{participant:{sub}}}"
+    if ses is not None:
+        cmd += f" {{session:{ses}}}"
+    if task is not None:
+        cmd += f" {{task:{task}}}"
+    if run is not None:
+        cmd += f" {{run:{run}}}"
+    if acq is not None:
+        cmd += f" {{acq:{acq}}}"
+    if modality is not None:
+        cmd += f" {{modality:{modality}}}"
+    if cmd != "":
+        cmd = f"filename{cmd}\n"
+        with socket.create_connection(("localhost", port)) as sock:
+            sock.sendall(cmd.encode())
 
 
 def start_recording_lab_recorder(port: int = 22345, select_all: bool = True):
@@ -83,13 +140,15 @@ if __name__ == "__main__":
     # launch_lab_recorder(
     #     r"Z:\01 Projects\2026-0004-MemoryTour\99_SharedSoftware\LabRecorder-1.18.0-Win_amd64\LabRecorder.exe"
     # )
-    with socket.create_connection(("localhost", 22345), timeout=5) as sock:
-        sock.sendall(
-            b"filename {root:Z:\\01 Projects\\2026-0004-MemoryTour\\02_Data\\tests\\} "
-            b"{template:sub-%p\ses-%s\%m\sub-%p_ses-%s_task-%b_run-%n_%m.xdf}"
-            b"{run:2} {participant:lsltest} {task:memory} {session:2} {modality:beh}\n"
-        )
-
+    configure_lab_recorder(
+        root=r"C:\Users\User\Documents\CurrentStudy",
+        template=r"sub-%p\ses-%s\%m\sub-%p_ses-%s_task-%b_run-%n_%m.xdf",
+        run=2,
+        sub="lsltest",
+        task="memory",
+        ses=2,
+        modality="beh",
+    )
     start_recording_lab_recorder()
     core.wait(5)  # Wait for 5 seconds before stopping the recording
     stop_recording_lab_recorder()
