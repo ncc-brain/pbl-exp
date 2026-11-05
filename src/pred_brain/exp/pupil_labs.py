@@ -1,3 +1,5 @@
+"""Helpers for connecting, configuring, and interacting with Pupil Labs eye trackers."""
+
 from time import time_ns
 
 from psychopy import core, gui, logging
@@ -33,7 +35,7 @@ def get_pupil_labs_device(
 
     Returns
     -------
-    device : object or None
+    device : Device or None
         The connected Pupil Labs device, or ``None`` if the user chooses not
         to connect to one.
     median_offset_ns : int or None
