@@ -149,7 +149,8 @@ def get_pupil_labs_device(
             core.quit()
 
         logging.info(
-            f"Connected to Pupil Labs {device_name} (serial number: {serial_number})"
+            f"Connected to Pupil Labs {device_name} at {device.address} "
+            f"(serial number: {serial_number})"
         )
 
         # Estimate the clock offset using one set of measurements.

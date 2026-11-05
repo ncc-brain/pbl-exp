@@ -4,5 +4,5 @@
 .. toctree::
    :hidden:
 
-   api
-   examples
+   api/index
+   examples/index
