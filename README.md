@@ -2,7 +2,7 @@
 
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 ![Python Version](https://img.shields.io/badge/python-3.10%2B-blue)
-![PyPI - Version](https://img.shields.io/pypi/v/pbl-exp)
+[![PyPI - Version](https://img.shields.io/pypi/v/pbl-exp)](https://pypi.org/project/pbl-exp/)
 
 Useful helper functions for running experiments at the Predictive Brain Lab (Bochum).
 
