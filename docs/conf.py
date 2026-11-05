@@ -26,3 +26,6 @@ html_theme_options = {
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
+
+# pyglet swaps in mock GL libraries under Sphinx, which makes psychopy.visual segfault on import.
+autodoc_mock_imports = ["psychopy"]
