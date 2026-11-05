@@ -4,7 +4,7 @@ project = "pbl-exp"
 author = "Qian Chu"
 release = _version("pbl-exp")
 version = ".".join(release.split(".")[:2])
-html_title = f"Predictive Brain Lab Experiment Helpers v{version}"
+html_title = f"Predictive Brain Lab Experiment Helpers v{release}"
 
 extensions = [
     "myst_parser",
