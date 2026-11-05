@@ -185,7 +185,7 @@ def create_fiducial_marker_stimuli(
             pos=(0, 0),
             opacity=1.0,
             interpolate=False,
-            name=f"{marker_family}_{marker_id}",
+            name=f"Marker {marker_family}_{marker_id}",
         )
         for marker_id, marker_image in zip(
             marker_ids,

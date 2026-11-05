@@ -11,6 +11,10 @@ authors = [{ name = "Qian Chu", email = "qianchu99@gmail.com" }]
 requires-python = ">=3.10"
 dependencies = ["psychopy", "pupil-labs-realtime-api", "sr-research-pylink", "pylsl"]
 
+[project.optional-dependencies]
+docs = ["sphinx", "pydata-sphinx-theme", "numpydoc", "myst-parser"]
+dev = ["pre-commit"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

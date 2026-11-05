@@ -1,11 +1,10 @@
 """Example PsychoPy experiment with LSL and Pupil Labs event markers."""
 
 import os
-import socket
+import random
 
 from psychopy import core, gui, logging, visual
 from psychopy.hardware import keyboard
-from pylsl import StreamInfo, StreamOutlet
 
 from pred_brain.exp import (
     configure_pupil_labs_template,
@@ -15,6 +14,7 @@ from pred_brain.exp import (
 )
 from pred_brain.exp.lsl import (
     check_lsl_streams,
+    create_markers_outlet,
     launch_lab_recorder,
     set_lab_recorder_filename,
     start_recording_lab_recorder,
@@ -39,7 +39,8 @@ else:
 TASK = "WatchFlash"
 N_TRIALS = 5
 FLASH_DURATION_SECONDS = 0.5
-INTER_FLASH_INTERVAL_SECONDS = 3.0
+FLASH_TO_QUESTION_SECONDS = 1.0
+ISI = 1.0
 STARTUP_SECONDS = 3.0
 
 LOG_DIRECTORY = "examples_logs_and_data"
@@ -76,15 +77,7 @@ logging.info("Experiment initialization started")
 
 # Create an LSL marker stream containing one string channel. The source ID
 # should uniquely identify this outlet among the streams on the network.
-event_stream_info = StreamInfo(
-    name="PsychoPyEvents",
-    type="Markers",
-    channel_count=1,
-    channel_format="string",
-    source_id=f"psychopy-events-{socket.gethostname()}",
-)
-
-event_outlet = StreamOutlet(event_stream_info)
+markers_outlet = create_markers_outlet()
 
 logging.info("Experiment-event LSL stream initialized")
 
@@ -111,7 +104,7 @@ def send_event_to_outputs(event_string: str):
     timestamped as close as possible to a visual change. PsychoPy's own log
     uses ``win.logOnFlip`` separately so it receives PsychoPy's flip timestamp.
     """
-    event_outlet.push_sample([event_string])
+    markers_outlet.push_sample([event_string])
     if device is not None and clock_offset_ns is not None:
         send_event_to_pupil_labs(
             event_string=event_string,
@@ -131,9 +124,12 @@ set_lab_recorder_filename(
 update_lab_recorder()
 
 # Check that all expected LSL streams are available
-expected_streams = [{"name": "PsychoPyEvents", "type": "Markers"}]
+expected_streams = [{"name": "ExperimentMarkers", "type": "Markers"}]
 if device is not None:
-    expected_streams.append({"type": "Gaze"})
+    expected_streams.append({"name": r"Neon Gaze$", "type": "Gaze"})  # Neon gaze stream
+    expected_streams.append(
+        {"name": r"Neon Events$", "type": "Event"}
+    )  # Neon event stream
 
 flag, streams = check_lsl_streams(expected_streams)
 
@@ -151,19 +147,16 @@ if not flag:
 win = visual.Window(fullscr=True)
 win.mouseVisible = False
 
-square = visual.Rect(
-    win=win,
-    width=1,
-    height=1,
-    fillColor="white",
-    units="norm",
+stimulus = visual.Rect(
+    win=win, width=1, height=1, fillColor="white", units="norm", name="Stimulus"
 )
 
-instruction_text = visual.TextStim(
+text = visual.TextStim(
     win=win,
     text="Press the space bar to start",
     height=0.05,
     units="height",
+    name="Instruction",
 )
 
 markers = create_fiducial_marker_stimuli(
@@ -194,7 +187,7 @@ def end_experiment(interrupted: bool = False) -> None:
     # Record the final marker in PsychoPy and LSL before stopping the device,
     # so it can also be sent to the active Pupil Labs recording below.
     logging.exp(event_string)
-    event_outlet.push_sample([event_string])
+    markers_outlet.push_sample([event_string])
 
     if device is not None:
         if clock_offset_ns is not None:
@@ -229,7 +222,7 @@ kb.registerCallback(
 # Start screen
 # ---------------------------------------------------------------------------
 
-instruction_text.draw()
+text.draw()
 win.flip()
 
 # Start only after the participant presses the space bar. Escape remains
@@ -262,50 +255,71 @@ logging.flush()
 # Trial loop
 # ---------------------------------------------------------------------------
 
+text.setName("question")
+text.setText("What color was the flash?\n<-- Red    Blue -->")
 for trial_index in range(N_TRIALS):
-    trial_number = trial_index + 1
-    flash_onset_event = f"flash onset trial={trial_number}"
-
     # Prepare the flash in the back buffer.
-    square.draw()
+    color = random.choice(["red", "blue"])
+    stimulus.setFillColor(color)
+    stimulus.draw()
 
     # Run external marker output immediately after the upcoming flip, placing
     # its timestamp close to the flash's visual onset. PsychoPy timestamps the
     # same event separately through logOnFlip.
+    event_name = "flash onset"
     win.callOnFlip(
         send_event_to_outputs,
-        flash_onset_event,
+        event_name,
     )
     win.logOnFlip(
         level=logging.EXP,
-        msg=flash_onset_event,
+        msg=event_name,
     )
 
     # Display the flash and run both callbacks registered above.
     win.flip()
-
-    # Keep the flash visible for the configured duration.
     core.wait(FLASH_DURATION_SECONDS)
 
     # Present a blank frame to remove the flash.
     win.flip()
+    core.wait(FLASH_TO_QUESTION_SECONDS)
+
+    text.draw()
+    event_name = "question onset"
+    win.callOnFlip(
+        send_event_to_outputs,
+        event_name,
+    )
+    win.logOnFlip(
+        level=logging.EXP,
+        msg=event_name,
+    )
+    win.flip()
+    keys = kb.waitKeys(keyList=["left", "right"])
+
+    key_pressed = keys[0].name
+    if color == "red" and key_pressed == "left":
+        correct = True
+    elif color == "blue" and key_pressed == "right":
+        correct = True
+    else:
+        correct = False
+    correct_text = "correct" if correct else "incorrect"
+
+    event_name = f"response: {keys[0].name} ({correct_text})"
+    send_event_to_outputs(event_name)
+    logging.exp(event_name)
+
+    win.flip()
 
     # Wait before beginning the next trial.
-    core.wait(INTER_FLASH_INTERVAL_SECONDS)
+    core.wait(ISI)
 
     # Write queued log messages to disk after every trial.
     logging.flush()
 
-    # Process keyboard input, including the registered Escape callback.
-    kb.getKeys()
-
-
 # ---------------------------------------------------------------------------
 # Normal experiment completion
 # ---------------------------------------------------------------------------
-
-# Leave a short post-trial period before writing the end marker and stopping
-# the Pupil Labs recording.
-core.wait(1.0)
 
 end_experiment(interrupted=False)

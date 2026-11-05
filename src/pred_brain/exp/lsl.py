@@ -1,5 +1,6 @@
 """Helpers for launching LabRecorder and controlling its LSL recording state."""
 
+import re
 import socket
 import subprocess
 import time
@@ -8,8 +9,46 @@ from pathlib import Path
 import pylsl
 
 
+def create_markers_outlet(
+    name: str = "ExperimentMarkers",
+    source_id: str | None = None,
+    channel_label="ExperimentMarker",
+) -> pylsl.StreamOutlet:
+    """Create an LSL outlet for experiment markers.
+
+    Parameters
+    ----------
+    name : str, default="ExperimentMarkers"
+        Name of the LSL stream.
+    source_id : str or None, default=None
+        Source ID for the LSL stream. If None, a default ID based on the hostname is used.
+    channel_label : str, default="ExperimentMarker"
+        Label for the single channel in the LSL stream.
+
+    Returns
+    -------
+    pylsl.StreamOutlet
+        The created LSL outlet for sending experiment markers.
+    """
+    if source_id is None:
+        source_id = f"{name}_{socket.gethostname()}"
+    stream_info = pylsl.StreamInfo(
+        name=name,
+        type="Markers",
+        channel_count=1,
+        channel_format="string",
+        source_id=source_id,
+    )
+    channels = stream_info.desc().append_child("channels")
+    channel = channels.append_child("channel")
+    channel.append_child_value("label", channel_label)
+    channel.append_child_value("type", "Markers")
+    channel.append_child_value("unit", "")
+    return pylsl.StreamOutlet(stream_info)
+
+
 def check_lsl_streams(
-    stream_info: dict | list[dict],
+    stream_criteria: dict[str, str] | list[dict[str, str]],
     wait_time: float = 3.0,
 ):
     """
@@ -17,8 +56,12 @@ def check_lsl_streams(
 
     Parameters
     ----------
-    stream_info : dict or list of dict
+    stream_criteria : dict or list of dict
         Information about the LSL stream(s) to check for availability.
+        Each dict specifies the attributes that a stream must have to be considered a match.
+        Values without regular-expression syntax are compared exactly. Values
+        containing regular-expression syntax are searched against string-valued
+        attributes.
         Keys are the attributes of the LSL stream, such as "name", "type", "source_id", etc.
     wait_time : float, default=3.0
         Maximum number of seconds to wait for the stream(s) to become available.
@@ -34,22 +77,31 @@ def check_lsl_streams(
 
     Examples
     --------
-    # Check for a stream with known name and type
+    # Check for a stream with an exact name and type
     >>> check_lsl_streams({"name": "MyEvents", "type": "Markers"})
-    # Check for a stream with only a known type
+    # Check for a stream with an exact type
     >>> check_lsl_streams({"type": "Gaze"})
+    # Check for a stream whose name ends with "Neon Gaze"
+    >>> check_lsl_streams({"name": r"Neon Gaze$"})
     True
     """
     active_streams = pylsl.resolve_streams(wait_time=wait_time)
-    if isinstance(stream_info, dict):
-        stream_info = [stream_info]
+    if isinstance(stream_criteria, dict):
+        stream_criteria = [stream_criteria]
 
-    for stream_criteria in stream_info:
+    for criteria in stream_criteria:
         found = False
         for stream in active_streams:
-            for key, value in stream_criteria.items():
+            for key, value in criteria.items():
                 attribute = getattr(stream, key)
                 actual_value = attribute() if callable(attribute) else attribute
+                if re.escape(value) != value:
+                    if (
+                        not isinstance(actual_value, str)
+                        or re.search(value, actual_value) is None
+                    ):
+                        break
+                    continue
                 if actual_value != value:
                     break
             else:
@@ -221,17 +273,3 @@ def stop_recording_lab_recorder(port: int = 22345):
         cannot be sent.
     """
     _send_lab_recorder_command(port, "stop\n")
-
-
-if __name__ == "__main__":
-    from psychopy import core
-
-    launch_lab_recorder(
-        r"Z:\01 Projects\2026-0004-MemoryTour\99_SharedSoftware\LabRecorder-1.18.0-Win_amd64\LabRecorder.exe"
-    )
-    set_lab_recorder_filename(
-        filename=r"sub-test\ses-2\beh\sub-test_ses-2_task-memory_run-1_beh.xdf",
-    )
-    start_recording_lab_recorder()
-    core.wait(10)  # Wait for 10 seconds before stopping the recording
-    stop_recording_lab_recorder()
