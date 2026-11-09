@@ -117,8 +117,11 @@ def launch_lab_recorder(
     config_path: Path | str | None = None,
     port: int = 22345,
     timeout: float = 60.0,
-) -> subprocess.Popen:
+) -> None:
     """Launch LabRecorder and wait until its remote-control server is available.
+
+    If a remote-control server is already available on ``localhost:port``,
+    this function does not launch another instance.
 
     LabRecorder is considered ready once its remote-control TCP server accepts
     a connection on ``localhost:port``.
@@ -135,11 +138,6 @@ def launch_lab_recorder(
     timeout : float, default=60.0
         Maximum number of seconds to wait for LabRecorder to become available.
 
-    Returns
-    -------
-    subprocess.Popen
-        The process object for the launched LabRecorder instance.
-
     Raises
     ------
     RuntimeError
@@ -152,35 +150,46 @@ def launch_lab_recorder(
     The LabRecorder configuration must enable the remote-control server on the
     specified port. Otherwise this function will time out.
     """
-    command = [str(lab_recorder_path)]
-    if config_path is not None:
-        command.extend(["-c", str(config_path)])
+    server_available = False
+    try:
+        with socket.create_connection(("localhost", port), timeout=0.5):
+            server_available = True
+    except OSError:
+        pass
 
-    recorder_process = subprocess.Popen(command)
+    if not server_available:
+        command = [str(lab_recorder_path)]
+        if config_path is not None:
+            command.extend(["-c", str(config_path)])
 
-    deadline = time.monotonic() + timeout
+        recorder_process = subprocess.Popen(command)
 
-    while time.monotonic() < deadline:
-        # Detect an immediate startup failure, e.g. an invalid configuration.
-        if recorder_process.poll() is not None:
-            raise RuntimeError(
-                f"LabRecorder exited during startup with return code "
-                f"{recorder_process.returncode}."
+        deadline = time.monotonic() + timeout
+        server_available = False
+
+        while time.monotonic() < deadline:
+            # Detect an immediate startup failure, e.g. an invalid configuration.
+            if recorder_process.poll() is not None:
+                raise RuntimeError(
+                    f"LabRecorder exited during startup with return code "
+                    f"{recorder_process.returncode}."
+                )
+
+            try:
+                with socket.create_connection(
+                    ("localhost", port),
+                    timeout=0.25,
+                ):
+                    server_available = True
+                    break
+            except OSError:
+                time.sleep(0.1)
+
+        if not server_available:
+            raise TimeoutError(
+                f"LabRecorder did not become available on localhost:{port} "
+                f"within {timeout} seconds."
             )
-
-        try:
-            with socket.create_connection(
-                ("localhost", port),
-                timeout=0.25,
-            ):
-                return recorder_process
-        except OSError:
-            time.sleep(0.1)
-
-    raise TimeoutError(
-        f"LabRecorder did not become available on localhost:{port} "
-        f"within {timeout} seconds."
-    )
 
 
 def _send_lab_recorder_command(port: int, command: str) -> None:
