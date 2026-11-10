@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 
 import pylsl
+from psychopy import logging
 
 
 def create_markers_outlet(
@@ -44,6 +45,9 @@ def create_markers_outlet(
     channel.append_child_value("label", channel_label)
     channel.append_child_value("type", "Markers")
     channel.append_child_value("unit", "")
+    logging.info(
+        f"Created LSL markers outlet with name '{name}' and source_id '{source_id}'"
+    )
     return pylsl.StreamOutlet(stream_info)
 
 
@@ -108,7 +112,9 @@ def check_lsl_streams(
                 found = True
                 break
         if not found:
+            logging.warning(f"LSL stream matching criteria {criteria} not found.")
             return False, active_streams
+    logging.info("All requested LSL streams are active.")
     return True, active_streams
 
 
@@ -163,6 +169,7 @@ def launch_lab_recorder(
             command.extend(["-c", str(config_path)])
 
         recorder_process = subprocess.Popen(command)
+        logging.info(f"Launching LabRecorder with command: {' '.join(command)}")
 
         deadline = time.monotonic() + timeout
         server_available = False
@@ -190,6 +197,8 @@ def launch_lab_recorder(
                 f"LabRecorder did not become available on localhost:{port} "
                 f"within {timeout} seconds."
             )
+        else:
+            logging.info(f"LabRecorder launched and is available on localhost:{port}.")
 
 
 def _send_lab_recorder_command(port: int, command: str) -> None:
@@ -221,6 +230,9 @@ def set_lab_recorder_filename(
         filename_command += f" {{template:{filename}}}"
     if filename_command != "":
         _send_lab_recorder_command(port, f"filename{filename_command}\n")
+        logging.info(
+            f"Set LabRecorder filename with command: filename{filename_command}"
+        )
 
 
 def start_recording_lab_recorder(port: int = 22345, select_all_streams: bool = True):
@@ -248,6 +260,7 @@ def start_recording_lab_recorder(port: int = 22345, select_all_streams: bool = T
         if select_all_streams:
             sock.sendall(b"select_all\n")
         sock.sendall(b"start\n")
+        logging.info("Sent start command to LabRecorder.")
 
 
 def update_lab_recorder(port: int = 22345):
@@ -282,3 +295,4 @@ def stop_recording_lab_recorder(port: int = 22345):
         cannot be sent.
     """
     _send_lab_recorder_command(port, "stop\n")
+    logging.info("Sent stop command to LabRecorder.")
