@@ -307,7 +307,7 @@ def save_hue_mapping(filepath: str, mapping: dict[str, str]) -> None:
             writer.writerow({"location": location, " resource_id": resource_id})
 
 
-def main() -> None:
+def discover_and_list_lights() -> None:
     hue = HueBridgeClient()
 
     # 1. Confirm connection
@@ -481,4 +481,5 @@ def map_lights_interactive() -> None:
 
 
 if __name__ == "__main__":
+    discover_and_list_lights()
     map_lights_interactive()
